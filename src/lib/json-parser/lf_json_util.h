@@ -9,6 +9,8 @@
 #include <assert.h>
 #include <inttypes.h>
 
+#include <time.h>
+
 #include <rte_byteorder.h>
 
 #include "../utils/parse.h"
@@ -44,19 +46,19 @@ lf_json_parse_string(const json_value *json_val, char *dst, size_t n)
 }
 
 static inline int
-lf_json_parse_uint16(const json_value *json_val, uint16_t *dst)
+lf_json_parse_uint16(const json_value *json_val, uint16_t *val)
 {
-	int64_t drkey_protocol;
+	int64_t raw_value;
 
 	if (json_val->type != json_integer) {
 		return -1;
 	}
 
-	drkey_protocol = json_val->u.integer;
-	if (drkey_protocol < 0 || drkey_protocol > UINT16_MAX) {
+	raw_value = json_val->u.integer;
+	if (raw_value < 0 || raw_value > UINT16_MAX) {
 		return -1;
 	}
-	*dst = (uint16_t)drkey_protocol;
+	*val = (uint16_t)raw_value;
 	return 0;
 }
 
@@ -72,20 +74,6 @@ lf_json_parse_uint64(json_value *json_val, uint64_t *val)
 
 	*val = (uint64_t)json_val->u.integer;
 	;
-	return 0;
-}
-
-static inline int
-lf_json_parse_bool(json_value *json_val, bool *val)
-{
-	if (json_val == NULL) {
-		return -1;
-	}
-	if (json_val->type != json_boolean) {
-		return -1;
-	}
-
-	*val = (bool)json_val->u.boolean;
 	return 0;
 }
 
@@ -117,10 +105,10 @@ lf_json_parse_ether(const json_value *json_val, uint8_t val[6])
 		j = i;
 		do {
 			assert(j <= json_val->u.string.length);
-			if (('0' <= addrstr[j]) && (int)(addrstr[j] <= '9')) {
-				val[k] = (val[k] << 4) | (addrstr[j] - '0');
+			if (('0' <= addrstr[j]) && (addrstr[j] <= '9')) {
+				val[k] = (val[k] << 4) | (uint8_t)(addrstr[j] - '0');
 			} else if (('a' <= addrstr[j]) && (addrstr[j] <= 'f')) {
-				val[k] = (val[k] << 4) | (int)(addrstr[j] - 'a' + 10);
+				val[k] = (val[k] << 4) | (uint8_t)(addrstr[j] - 'a' + 10);
 			} else {
 				return -1;
 			}
@@ -178,14 +166,14 @@ lf_json_parse_ipv6(const json_value *json_val, uint8_t val[16])
  * @param val result port number (newtork byte order).
  */
 static inline int
-lf_json_parse_port(const json_value *json_val, uint16_t *dst)
+lf_json_parse_port(const json_value *json_val, uint16_t *val)
 {
 	int res;
-	res = lf_json_parse_uint16(json_val, dst);
+	res = lf_json_parse_uint16(json_val, val);
 	if (res != 0) {
 		return res;
 	}
-	*dst = rte_cpu_to_be_16(*dst);
+	*val = rte_cpu_to_be_16(*val);
 	return 0;
 }
 
@@ -224,35 +212,78 @@ lf_json_parse_isd_as_be(json_value *json_val, uint64_t *val)
 
 
 /**
- * Parse DRKey string.
- * @param val result 16 byte DRKey (newtork byte order).
+ * Parse byte buffer from hex string.
+ * @param val result byte buffer of length len (newtork byte order).
  */
 static inline int
-lf_json_parse_drkey(const json_value *json_val, uint8_t val[16])
+lf_json_parse_byte_buffer(const json_value *json_val, int len, uint8_t val[])
 {
-	char *addrstr;
+	char *bufstr;
 
 	if (json_val->type != json_string) {
 		return -1;
 	}
 
-	addrstr = json_val->u.string.ptr;
+	bufstr = json_val->u.string.ptr;
 
-	for (uint8_t i = 0; i < 16; i++) {
+	int bufstr_len = json_val->u.string.length;
+	if (bufstr_len != 2 * len) {
+		return -1;
+	}
+
+	for (uint8_t i = 0; i < len; i++) {
 		val[i] = 0;
 		for (uint8_t j = 2 * i; j < 2 * i + 2; j++) {
-			assert(j <= json_val->u.string.length);
-			if (('0' <= addrstr[j]) && (int)(addrstr[j] <= '9')) {
-				val[i] = (val[i] << 4) | (addrstr[j] - '0');
-			} else if (('a' <= addrstr[j]) && (addrstr[j] <= 'f')) {
-				val[i] = (val[i] << 4) | (int)(addrstr[j] - 'a' + 10);
+			assert(j < bufstr_len);
+			if (('0' <= bufstr[j]) && (bufstr[j] <= '9')) {
+				val[i] = (val[i] << 4) | (uint8_t)(bufstr[j] - '0');
+			} else if (('a' <= bufstr[j]) && (bufstr[j] <= 'f')) {
+				val[i] = (val[i] << 4) | (uint8_t)(bufstr[j] - 'a' + 10);
 			} else {
 				return -1;
 			}
 		}
 	}
-	assert(32 == json_val->u.string.length);
-	assert(addrstr[32] == '\0');
+
+	return 0;
+}
+
+/**
+ * Parse timestamp from iso string.
+ * @param val result timestamp in unix time
+ */
+static inline int
+lf_json_parse_timestamp(const json_value *json_val, uint64_t *val)
+{
+	if (json_val->type != json_string) {
+		return -1;
+	}
+
+	char *bufstr;
+	bufstr = json_val->u.string.ptr;
+
+	int bufstr_len = json_val->u.string.length;
+	if (bufstr_len != 19) {
+		return -1;
+	}
+
+	struct tm date;
+	// expect time in format "%Y-%m-%dT%H:%M:%S"
+	if (bufstr[4] != '-' || bufstr[7] != '-' || bufstr[10] != 'T' ||
+			bufstr[13] != ':' || bufstr[16] != ':') {
+		return -1;
+	}
+
+	date.tm_year = atoi(bufstr) - 1900;
+	date.tm_mon = atoi(bufstr + 5) - 1;
+	date.tm_mday = atoi(bufstr + 8);
+	date.tm_hour = atoi(bufstr + 11);
+	date.tm_min = atoi(bufstr + 14);
+	date.tm_sec = atoi(bufstr + 17);
+
+	// NOTE: timegm is only available on linux systems
+	time_t unix_time = timegm(&date);
+	*val = (uint64_t)(unix_time) * (uint64_t)1e9;
 
 	return 0;
 }

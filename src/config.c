@@ -45,7 +45,9 @@
 #define FIELD_DRKEY_PROTOCOL     "drkey_protocol"
 #define FIELD_DRKEY_SERVICE_ADDR "drkey_service_addr"
 
-#define FIELD_DRKEY_LEVEL_1 "drkey_level1"
+#define FIELD_SHARED_SECRET "shared_secret"
+#define FIELD_NOT_BEFORE    "not_before"
+#define FIELD_SECRET_VALUE  "sv"
 
 #define FIELD_DST_RATELIMITER "dst_ratelimiter"
 
@@ -89,11 +91,8 @@ peer_init(struct lf_config_peer *config_peer)
 		.isd_as = 1,
 		.next = NULL,
 
-		.drkey_level_1 =
-				(struct lf_config_drkey_level_1){
-						.inbound = { 0 },
-						.outbound = { 0 },
-				},
+		.shared_secret_configured_option = false,
+		.shared_secrets = { 0 },
 
 		/* per default no rate limit is defined for a peer */
 		.ratelimit_option = false,
@@ -185,23 +184,24 @@ parse_ratelimit(json_value *json_val, struct lf_config_ratelimit *ratelimit)
 }
 
 /**
- * The drkey_level_1 struct consists of an inbound and outbound key. This should
- * be used for preconfigured keys.
+ * The shared_secret struct consists of a key and a timestamp.
+ * This should be used for preconfigured keys.
  *
  * @return Returns 0 on success.
  */
 static int
-parse_drkey_level_1(json_value *json_val,
-		struct lf_config_drkey_level_1 *drkey_level_1)
+parse_shared_secret(json_value *json_val,
+		struct lf_config_shared_secret *shared_secret)
 {
 	int res, error_count = 0;
 	unsigned int length;
 	unsigned int i;
 	char *field_name;
 	json_value *field_value;
+	bool sv_flag = false, ts_flag = false;
 
 	/* Initialize drkey struct. Set all to 0. */
-	(void)memset(drkey_level_1, 0, sizeof *drkey_level_1);
+	(void)memset(shared_secret, 0, sizeof *shared_secret);
 
 	if (json_val == NULL) {
 		return -1;
@@ -217,24 +217,77 @@ parse_drkey_level_1(json_value *json_val,
 		field_name = json_val->u.object.values[i].name;
 		field_value = json_val->u.object.values[i].value;
 
-		if (strcmp(field_name, FIELD_INBOUND) == 0) {
-			res = lf_json_parse_drkey(field_value, drkey_level_1->inbound);
+		if (strcmp(field_name, FIELD_SECRET_VALUE) == 0) {
+			res = lf_json_parse_byte_buffer(field_value, LF_CRYPTO_DRKEY_SIZE,
+					shared_secret->sv);
 			if (res != 0) {
-				LF_LOG(ERR, "Invalid DRKEY (%d:%d)\n", field_value->line,
+				LF_LOG(ERR, "Invalid shared secret (%d:%d)\n",
+						field_value->line, field_value->col);
+				error_count++;
+			}
+			sv_flag = true;
+		} else if (strcmp(field_name, FIELD_NOT_BEFORE) == 0) {
+			res = lf_json_parse_timestamp(field_value,
+					&shared_secret->not_before);
+			if (res != 0) {
+				LF_LOG(ERR, "Invalid timestamp (%d:%d)\n", field_value->line,
 						field_value->col);
 				error_count++;
 			}
-		} else if (strcmp(field_name, FIELD_OUTBOUND) == 0) {
-			res = lf_json_parse_drkey(field_value, drkey_level_1->outbound);
-			if (res != 0) {
-				LF_LOG(ERR, "Invalid DRKEY (%d:%d)\n", field_value->line,
-						field_value->col);
-				error_count++;
-			}
+			ts_flag = true;
 		} else {
 			LF_LOG(ERR, "Unknown field %s (%d:%d)\n", field_name,
 					field_value->line, field_value->col);
 			error_count++;
+		}
+	}
+
+	if (error_count > 0) {
+		return -1;
+	}
+
+	if (!sv_flag || !ts_flag) {
+		LF_LOG(ERR, "Invalid shared secret configuration. Need to define both "
+					"secret value "
+					"and not before timestamp.\n");
+		return -1;
+	}
+
+	return 0;
+}
+static int
+parse_shared_secret_list(json_value *json_val,
+		struct lf_config_shared_secret shared_secret[LF_CONFIG_SV_MAX])
+{
+	unsigned int length;
+	unsigned int i;
+	unsigned int res;
+
+	if (json_val == NULL) {
+		return -1;
+	}
+
+	if (json_val->type != json_array) {
+		return -1;
+	}
+
+	length = json_val->u.array.length;
+	if (length > LF_CONFIG_SV_MAX) {
+		LF_LOG(ERR, "Exceed shared secret limit (%d:%d)\n", json_val->line,
+				json_val->col);
+		return -1;
+	}
+	if (length < 1) {
+		LF_LOG(ERR, "Must define at least one shared secret (%d:%d)\n",
+				json_val->line, json_val->col);
+		return -1;
+	}
+
+	for (i = 0; i < length; ++i) {
+		res = parse_shared_secret(json_val->u.array.values[i],
+				&shared_secret[i]);
+		if (res != 0) {
+			return -1;
 		}
 	}
 
@@ -296,13 +349,14 @@ parse_peer(json_value *json_val, struct lf_config_peer *peer)
 				error_count++;
 			}
 			peer->ratelimit_option = true;
-		} else if (strcmp(field_name, FIELD_DRKEY_LEVEL_1) == 0) {
-			res = parse_drkey_level_1(field_value, &peer->drkey_level_1);
+		} else if (strcmp(field_name, FIELD_SHARED_SECRET) == 0) {
+			res = parse_shared_secret_list(field_value, peer->shared_secrets);
 			if (res != 0) {
-				LF_LOG(ERR, "Invalid DRKEY (%d:%d)\n", field_value->line,
-						field_value->col);
+				LF_LOG(ERR, "Invalid shared secret (%d:%d)\n",
+						field_value->line, field_value->col);
 				error_count++;
 			}
+			peer->shared_secret_configured_option = true;
 		} else {
 			LF_LOG(ERR, "Unknown field %s (%d:%d)\n", field_name,
 					field_value->line, field_value->col);
@@ -888,7 +942,7 @@ lf_config_new_from_file(const char *filename)
 	if (fread(file_content, file_size, 1, file) != 1) {
 		LF_LOG(ERR, "Unable to read content of %s\n", filename);
 		(void)fclose(file);
-		(void)free(file_content);
+		free(file_content);
 		return NULL;
 	}
 
@@ -897,29 +951,29 @@ lf_config_new_from_file(const char *filename)
 	/* Initialize config struct. Set all to 0. */
 	config = lf_config_new();
 	if (config == NULL) {
-		(void)free(file_content);
+		free(file_content);
 		return NULL;
 	}
 
 	json_val = json_parse(file_content, file_size);
 	if (json_val == NULL) {
 		LF_LOG(ERR, "Unable to parse json.\n");
-		(void)free(file_content);
-		(void)free(config);
+		free(file_content);
+		free(config);
 		return NULL;
 	}
 
 	res = parse_config(json_val, config);
 	if (res != 0) {
 		LF_LOG(ERR, "Unable to parse config.\n");
-		(void)free(file_content);
-		(void)free(config);
-		(void)json_value_free(json_val);
+		free(file_content);
+		free(config);
+		json_value_free(json_val);
 		return NULL;
 	}
 
-	(void)free(file_content);
-	(void)json_value_free(json_val);
+	free(file_content);
+	json_value_free(json_val);
 
 	return config;
 }

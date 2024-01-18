@@ -9,6 +9,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "lib/crypto/crypto.h"
+
 /**
  * This module defines the config structure and offers functionality to parse a
  * JSON configuration file, check its format, and return a C struct representing
@@ -17,6 +19,11 @@
  */
 
 #define LF_CONFIG_PEERS_MAX 1000000 /* 1'000'000 */
+
+/*
+ * Maximum number of SV that can be configured per peer
+ */
+#define LF_CONFIG_SV_MAX 5
 
 /*
  * Rate limits are always defined for bytes and packets.
@@ -28,9 +35,9 @@ struct lf_config_ratelimit {
 	uint64_t packet_burst;
 };
 
-struct lf_config_drkey_level_1 {
-	uint8_t inbound[16];
-	uint8_t outbound[16];
+struct lf_config_shared_secret {
+	uint8_t sv[LF_CRYPTO_DRKEY_SIZE];
+	uint64_t not_before;
 };
 
 struct lf_config_peer {
@@ -42,8 +49,9 @@ struct lf_config_peer {
 	bool ratelimit_option; /* if a rate limit is defined */
 	struct lf_config_ratelimit ratelimit;
 
-	/* preconfigured AS-AS keys */
-	struct lf_config_drkey_level_1 drkey_level_1;
+	/* preconfigured shared keys */
+	bool shared_secret_configured_option; /* if shared secrets are defined*/
+	struct lf_config_shared_secret shared_secrets[LF_CONFIG_SV_MAX];
 
 	/* LF-IP: ip -> isd_as map (TODO: move this to a separate map) */
 	uint32_t ip; /* in network byte order */
@@ -87,8 +95,6 @@ struct lf_config_pkt_mod {
 	uint32_t ip; /* in network byte order */
 #endif
 };
-
-struct lf_config_ratelimiter {};
 
 struct lf_config_dst_ratelimiter {
 	uint32_t dst_ip; /* in network byte order */

@@ -6,21 +6,22 @@ package main
 import (
 	"C"
 	"unsafe"
-
-	"github.com/scionproto/scion/pkg/drkey"
 )
 
-//export GetASASKey
-func GetASASKey(sciondAddr *C.char, fastIA, slowIA uint64, drkeyProtocol uint16, valTime int64,
+//export GetHostASKey
+func GetHostASKey(sciondAddr *C.char, fastIA, slowIA, fastAddr uint64, drkeyProtocol uint16, valTime int64,
+	validityNotBefore, validityNotAfter *int64, keyPtr unsafe.Pointer) int {
+	
+	// TODO: implement key fetching from SCION control service
+	return -1
+}
+
+//export GetHostHostKey
+func GetHostHostKey(sciondAddr *C.char, fastIA, slowIA, fastAddr, slowAddr uint64, drkeyProtocol uint16, valTime int64,
 	validityNotBefore, validityNotAfter *int64, keyPtr unsafe.Pointer) int {
 
-	// This just creates a 0...0 key for testing
-	*validityNotBefore = 0 * 1000
-	*validityNotAfter = 1800000000 * 1000
-	key := new(drkey.Key)[:]
-	copy((*[16]byte)(keyPtr)[:], key[:])
-
-	return 0
+	// TODO: implement key fetching from SCION control service
+	return -1
 }
 
 func main() {}
