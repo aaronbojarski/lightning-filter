@@ -114,7 +114,8 @@ lf_keymanager_service_update(struct lf_keymanager *km)
 					sizeof(struct lf_keymanager_dictionary_data));
 
 			res = lf_keyfetcher_fetch_as_as_key(km->fetcher, key_ptr->as,
-					km->src_as, key_ptr->drkey_protocol, ns_now,
+					km->src_as, key_ptr->drkey_protocol,
+					ns_now + LF_DRKEY_PREFETCHING_PERIOD,
 					&new_data->inbound_key);
 			if (res < 0) {
 				rte_free(new_data);
@@ -161,7 +162,8 @@ lf_keymanager_service_update(struct lf_keymanager *km)
 					sizeof(struct lf_keymanager_dictionary_data));
 
 			res = lf_keyfetcher_fetch_as_as_key(km->fetcher, km->src_as,
-					key_ptr->as, key_ptr->drkey_protocol, ns_now,
+					key_ptr->as, key_ptr->drkey_protocol,
+					ns_now + LF_DRKEY_PREFETCHING_PERIOD,
 					&new_data->outbound_key);
 			if (res < 0) {
 				rte_free(new_data);
@@ -449,6 +451,7 @@ lf_keymanager_close(struct lf_keymanager *km)
 		lf_crypto_drkey_ctx_close(&km->workers[worker_id].drkey_ctx);
 	}
 	lf_keyfetcher_close(km->fetcher);
+	free(km->fetcher);
 	km->fetcher = NULL;
 	return 0;
 }
@@ -498,14 +501,14 @@ lf_keymanager_init(struct lf_keymanager *km, uint16_t nb_workers,
 
 	reset_statistics(&km->statistics);
 
-	struct lf_keyfetcher *fetcher;
-	fetcher = malloc(sizeof(struct lf_keyfetcher));
-	if (fetcher == NULL) {
+	km->fetcher = malloc(sizeof(struct lf_keyfetcher));
+	if (km->fetcher == NULL) {
 		return -1;
 	}
-	fetcher->dict = key_dictionary_init(initial_size);
-	lf_keyfetcher_init(fetcher, initial_size);
-	km->fetcher = fetcher;
+	res = lf_keyfetcher_init(km->fetcher, initial_size);
+	if (res != 0) {
+		return -1;
+	}
 
 	return 0;
 }

@@ -25,11 +25,11 @@
 #include "lib/log/log.h"
 
 /**
- * The key manager manages the storage and fetching of the required DRKeys.
- * It provides an interface for workers to query host-to-host keys efficiently.
+ * The key manager manages the storage, caching and fetching of the required
+ * DRKeys. It provides an interface for workers to query host-to-host keys
+ * efficiently.
  *
- * For the fetching, it depends on a DRKey fetcher module, which depends on the
- * deployment setup.
+ * For the fetching, it uses the keyfetcher.
  */
 
 #define LF_KEYMANAGER_INTERVAL 0.5 /* seconds */
@@ -161,7 +161,6 @@ lf_keymanager_worker_inbound_get_drkey(struct lf_keymanager_worker *kmw,
 		lf_drkey_derive_host_host_from_as_as(&kmw->drkey_ctx,
 				&dict_node->inbound_key.key, backend_addr, peer_addr,
 				drkey_protocol, drkey);
-		*drkey_epoch_start_ns = dict_node->inbound_key.validity_not_before;
 		return 0;
 	}
 
@@ -173,7 +172,6 @@ lf_keymanager_worker_inbound_get_drkey(struct lf_keymanager_worker *kmw,
 		lf_drkey_derive_host_host_from_as_as(&kmw->drkey_ctx,
 				&dict_node->old_inbound_key.key, backend_addr, peer_addr,
 				drkey_protocol, drkey);
-		*drkey_epoch_start_ns = dict_node->old_inbound_key.validity_not_before;
 		return 0;
 	}
 
@@ -227,7 +225,6 @@ lf_keymanager_worker_outbound_get_drkey(struct lf_keymanager_worker *kmw,
 		lf_drkey_derive_host_host_from_as_as(&kmw->drkey_ctx,
 				&dict_node->outbound_key.key, peer_addr, backend_addr,
 				drkey_protocol, drkey);
-		*drkey_epoch_start_ns = dict_node->outbound_key.validity_not_before;
 		return res;
 	}
 
@@ -238,7 +235,6 @@ lf_keymanager_worker_outbound_get_drkey(struct lf_keymanager_worker *kmw,
 		lf_drkey_derive_host_host_from_as_as(&kmw->drkey_ctx,
 				&dict_node->old_outbound_key.key, peer_addr, backend_addr,
 				drkey_protocol, drkey);
-		*drkey_epoch_start_ns = dict_node->old_outbound_key.validity_not_before;
 		return res;
 	}
 

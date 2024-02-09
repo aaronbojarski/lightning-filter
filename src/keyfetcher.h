@@ -15,9 +15,17 @@
 #include "lib/crypto/crypto.h"
 #include "lib/log/log.h"
 
-
-#define LF_KEYFETCHER_LOG(level, ...) LF_LOG(level, "Keyfetcher: " __VA_ARGS__)
-
+/**
+ * The keyfetcher fetches the requested DRKeys.
+ * It either fetches the keys from the control service or derives them for peers
+ * that have shared secret values configured. The configured shared values are
+ * stored in the keyfetcher.
+ *
+ * The keyfetcher does not implement additional caching.
+ *
+ * The CS fetching depends on a DRKey fetcher module, which depends on the
+ * deployment setup.
+ */
 
 struct lf_keyfetcher_sv_container {
 	uint64_t validity_not_before; /* Unix timestamp (nanoseconds) */
@@ -49,31 +57,31 @@ struct lf_keyfetcher {
 };
 
 int
-lf_keyfetcher_fetch_as_as_key(struct lf_keyfetcher *fetcher, uint64_t src_ia,
+lf_keyfetcher_fetch_as_as_key(struct lf_keyfetcher *kf, uint64_t src_ia,
 		uint64_t dst_ia, uint16_t drkey_protocol, uint64_t ns_valid,
 		struct lf_keymanager_key_container *key);
+
 int
-lf_keyfetcher_fetch_host_as_key(struct lf_keyfetcher *fetcher, uint64_t src_ia,
+lf_keyfetcher_fetch_host_as_key(struct lf_keyfetcher *kf, uint64_t src_ia,
 		uint64_t dst_ia, const struct lf_host_addr *fast_side_host,
 		uint16_t drkey_protocol, uint64_t ns_valid,
 		struct lf_keymanager_key_container *key);
 
 int
-lf_keyfetcher_fetch_host_host_key(struct lf_keyfetcher *fetcher,
-		uint64_t src_ia, uint64_t dst_ia,
-		const struct lf_host_addr *fast_side_host,
+lf_keyfetcher_fetch_host_host_key(struct lf_keyfetcher *kf, uint64_t src_ia,
+		uint64_t dst_ia, const struct lf_host_addr *fast_side_host,
 		const struct lf_host_addr *slow_side_host, uint16_t drkey_protocol,
 		uint64_t ns_valid, struct lf_keymanager_key_container *key);
 
 // should only be called when keymanager management lock is hold
 int
-lf_keyfetcher_apply_config(struct lf_keyfetcher *fetcher,
+lf_keyfetcher_apply_config(struct lf_keyfetcher *kf,
 		const struct lf_config *config);
 
 int
-lf_keyfetcher_close(struct lf_keyfetcher *fetcher);
+lf_keyfetcher_close(struct lf_keyfetcher *kf);
 
 int
-lf_keyfetcher_init(struct lf_keyfetcher *fetcher, uint32_t initial_size);
+lf_keyfetcher_init(struct lf_keyfetcher *kf, uint32_t initial_size);
 
 #endif /* LF_KEYFETCHER_H */
