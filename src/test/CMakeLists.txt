@@ -98,5 +98,26 @@ add_custom_target(ratelimiter_test_file
 )
 add_dependencies(ratelimiter_test ratelimiter_test_file)
 
+############
+# spao_test
+############
+add_executable(spao_test EXCLUDE_FROM_ALL worker_spao_test.c)
+
+# GO implementation
+add_subdirectory(scion_spao/)
+target_link_libraries(spao_test PRIVATE spao pthread)
+target_include_directories(spao_test PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
+add_test(NAME spao_test COMMAND spao_test --no-huge)
+# Dependencies
+target_sources(spao_test PRIVATE log_mock.c)
+# DPDK
+add_definitions(${DPDK_STATIC_CFLAGS}) # TODO: target
+target_include_directories(spao_test PRIVATE ${DPDK_SATIC_INCLUDE_DIRS})
+target_link_libraries(spao_test PRIVATE ${DPDK_STATIC_LDFLAGS})
+# Include JSON Parser
+target_link_libraries(spao_test PRIVATE jsonparser)
+
+
 # Add the tests to the global build_test target.
-add_dependencies(build_tests config_parser_test duplicate_filter_test rcu_test keymanager_test ratelimiter_test)
+add_dependencies(build_tests config_parser_test duplicate_filter_test rcu_test keymanager_test ratelimiter_test spao_test)
