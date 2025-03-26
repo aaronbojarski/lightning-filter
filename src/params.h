@@ -66,6 +66,11 @@ struct lf_params {
 	 * Keymanager
 	 */
 	unsigned int km_size;
+
+	/*
+	 * Distributor
+	 */
+	unsigned int dist_cores; /* nb of cores for distributors */
 };
 
 int

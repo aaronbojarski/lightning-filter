@@ -15,6 +15,7 @@
 #include <rte_mempool.h>
 
 #include "config.h"
+#include "distributor.h"
 #include "keymanager.h"
 #include "lf.h"
 #include "lib/crypto/crypto.h"
@@ -44,20 +45,7 @@
 struct lf_worker_context {
 	uint16_t lcore_id;
 
-	/* RX/TX ports and queues */
-	/* TODO: remove from the lf worker context */
-	uint16_t max_rx_tx_index, current_rx_tx_index;
-	uint16_t rx_port_id[RTE_MAX_ETHPORTS];
-	uint16_t rx_queue_id[RTE_MAX_ETHPORTS];
-	uint16_t tx_port_id[RTE_MAX_ETHPORTS];
-	uint16_t tx_queue_id[RTE_MAX_ETHPORTS];
-	uint16_t tx_queue_id_by_port[RTE_MAX_ETHPORTS];
-	struct rte_eth_dev_tx_buffer *tx_buffer[RTE_MAX_ETHPORTS];
-	struct rte_eth_dev_tx_buffer *tx_buffer_by_port[RTE_MAX_ETHPORTS];
-
-	/* Forwarding port pair */
-	/* TODO: replace with a ip lookup struct for proper l3 forwarding */
-	uint16_t port_pair[RTE_MAX_ETHPORTS];
+	struct lf_distributor_worker distributor;
 
 	/* Timestamp threshold in nanoseconds */
 	uint64_t timestamp_threshold;

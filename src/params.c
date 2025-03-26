@@ -44,6 +44,9 @@ static const struct lf_params default_params = {
 
 	/* keymanager */
 	.km_size = 1024,
+
+	/* distributor */
+	.dist_cores = 2,
 };
 
 #define LF_MAX_PORTPAIRS (2 * RTE_MAX_ETHPORTS)
@@ -75,6 +78,7 @@ static const char short_options[] = "v:" /* version */
 #define CMD_LINE_OPT_RL_SIZE         "rl-size"
 #define CMD_LINE_OPT_KM_SIZE         "km-size"
 #define CMD_LINE_OPT_DISABLE_MIRRORS "disable-mirrors"
+#define CMD_LINE_OPT_DIST_CORES      "dist-cores"
 
 /* map long options to number */
 enum {
@@ -97,6 +101,7 @@ enum {
 	CMD_LINE_OPT_KM_CONFIG_FILE_NUM,
 	CMD_LINE_OPT_KM_SIZE_NUM,
 	CMD_LINE_OPT_DISABLE_MIRRORS_NUM,
+	CMD_LINE_OPT_DIST_CORES_NUM,
 };
 
 static const struct option long_options[] = {
@@ -120,6 +125,8 @@ static const struct option long_options[] = {
 	{ CMD_LINE_OPT_KM_SIZE, required_argument, 0, CMD_LINE_OPT_KM_SIZE_NUM },
 	{ CMD_LINE_OPT_DISABLE_MIRRORS, no_argument, 0,
 			CMD_LINE_OPT_DISABLE_MIRRORS_NUM },
+	{ CMD_LINE_OPT_DIST_CORES, required_argument, 0,
+			CMD_LINE_OPT_DIST_CORES_NUM },
 	{ NULL, 0, 0, 0 },
 };
 
@@ -164,6 +171,8 @@ lf_usage(const char *prgname)
 			"         Size of keymanager hash table.\n"
 			"  --disable-mirrors\n"
 			"         Disables mirrors for all ports.\n",
+			"  --dist-cores=NUM\n"
+			"         Number of distributor cores allocated.\n",
 			prgname);
 }
 
@@ -521,6 +530,19 @@ lf_params_parse(int argc, char **argv, struct lf_params *params)
 		/* disable mirrors for all ports */
 		case CMD_LINE_OPT_DISABLE_MIRRORS_NUM:
 			params->disable_mirrors = true;
+			break;
+		/* distributor core number */
+		case CMD_LINE_OPT_DIST_CORES_NUM:
+			res = parse_uint(optarg, &params->dist_cores);
+			if (res != 0 || params->dist_cores == 0) {
+				LF_LOG(ERR, "Invalid dist-cores\n");
+				return -1;
+			}
+#if !LF_DISTRIBUTOR
+			/* provide a warning if distributor cores are not enabled */
+			LF_LOG(WARNING, "Parameter (dist-cores) for inactive distributor "
+							"cores detected.\n");
+#endif
 			break;
 		/* unknown option */
 		default:

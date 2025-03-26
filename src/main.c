@@ -42,14 +42,22 @@
  * as well as the  initialization and management of all modules and all workers.
  */
 
+#include "distributor.h"
+
+
 /* lcore assignemnts */
 uint16_t lf_nb_workers;
 bool lf_worker_lcores[RTE_MAX_LCORE];
 uint16_t lf_worker_lcore_map[RTE_MAX_LCORE];
 uint16_t lf_keymanager_lcore;
 
+uint16_t lf_nb_distributors;
+bool lf_distributor_lcores[RTE_MAX_LCORE];
+uint16_t lf_distributor_lcore_map[RTE_MAX_LCORE];
+
 /* module contextes */
 static struct lf_worker_context worker_contexts[RTE_MAX_LCORE];
+static struct lf_distributor distributor;
 static struct lf_configmanager configmanager;
 static struct lf_statistics statistics;
 static struct lf_keymanager keymanager;
@@ -157,16 +165,25 @@ init_rcu_qs(uint16_t nb_qs_vars, struct rte_rcu_qsbr **qsv)
 int
 assign_lcores(__rte_unused struct lf_params *params)
 {
-	uint16_t lcore_id, worker_counter;
+	uint16_t lcore_id, worker_counter, distributor_counter;
 	uint16_t nb_cores_required;
 
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
 		lf_worker_lcores[lcore_id] = false;
 		lf_worker_lcore_map[lcore_id] = RTE_MAX_LCORE;
+
+		lf_distributor_lcores[lcore_id] = false;
+		lf_distributor_lcore_map[lcore_id] = RTE_MAX_LCORE;
 	}
 
 	/* main lcore + key manager lcore + at least one worker lcore */
 	nb_cores_required = 3;
+
+	if (LF_DISTRIBUTOR) {
+		/* add distributor lcores */
+		lf_nb_distributors = params->dist_cores;
+		nb_cores_required += lf_nb_distributors;
+	}
 
 	if (nb_cores_required > rte_lcore_count()) {
 		LF_LOG(ERR, "Not enough lcores: detected %d but require at least %d\n",
@@ -180,12 +197,23 @@ assign_lcores(__rte_unused struct lf_params *params)
 	lf_keymanager_lcore = RTE_MAX_LCORE;
 
 	worker_counter = 0;
+	distributor_counter = 0;
 	RTE_LCORE_FOREACH_WORKER(lcore_id) {
 
 		/* first (non-main) lcore is assigned to the keymanager service */
 		if (lf_keymanager_lcore == RTE_MAX_LCORE) {
 			lf_keymanager_lcore = lcore_id;
 			LF_LOG(DEBUG, "lcore %u: keymanager\n", lcore_id);
+			continue;
+		}
+
+		/* the following lcores are assigned to the distributor */
+		if (distributor_counter < lf_nb_distributors) {
+			lf_distributor_lcores[distributor_counter] = true;
+			lf_distributor_lcore_map[distributor_counter] = lcore_id;
+			LF_LOG(DEBUG, "lcore %u: distributor %u\n", lcore_id,
+					distributor_counter);
+			++distributor_counter;
 			continue;
 		}
 
@@ -218,48 +246,45 @@ static int
 setup_rx_tx(struct lf_params *params)
 {
 	int res;
-	uint16_t lcore_id, port_id;
-	struct lf_worker_context *w_ctx;
+	uint16_t lcore_id, worker_id;
 	struct lf_setup_port_queue_pair port_queues[RTE_MAX_LCORE]
 											   [RTE_MAX_ETHPORTS];
 
-	res = lf_setup_ports(lf_worker_lcores, params, port_queues, &mirror_ctx);
+	struct lf_distributor_worker *distributor_workers[LF_MAX_WORKER];
+
+	if (LF_DISTRIBUTOR) {
+		res = lf_setup_ports(lf_distributor_lcores, params, port_queues,
+				&mirror_ctx);
+	} else {
+		res = lf_setup_ports(lf_worker_lcores, params, port_queues,
+				&mirror_ctx);
+	}
+
 	if (res < 0) {
 		LF_LOG(ERR, "Failed to setup ports\n");
 		return -1;
 	}
 	LF_LOG(DEBUG, "Setup ports done\n");
 
+	worker_id = 0;
 	RTE_LCORE_FOREACH(lcore_id) {
-		w_ctx = &worker_contexts[lcore_id];
-		w_ctx->max_rx_tx_index = 0;
-		w_ctx->current_rx_tx_index = 0;
-		RTE_ETH_FOREACH_DEV(port_id) {
-			if (port_queues[lcore_id][port_id].rx_queue_id ==
-					LF_SETUP_INVALID_ID) {
-				continue;
-			}
-			w_ctx->rx_port_id[w_ctx->max_rx_tx_index] = port_id;
-			w_ctx->tx_port_id[w_ctx->max_rx_tx_index] = port_id;
-			w_ctx->rx_queue_id[w_ctx->max_rx_tx_index] =
-					port_queues[lcore_id][port_id].rx_queue_id;
-			w_ctx->tx_queue_id[w_ctx->max_rx_tx_index] =
-					port_queues[lcore_id][port_id].tx_queue_id;
-			w_ctx->tx_queue_id_by_port[port_id] =
-					port_queues[lcore_id][port_id].tx_queue_id;
-
-			w_ctx->tx_buffer[w_ctx->max_rx_tx_index] =
-					port_queues[lcore_id][port_id].tx_buffer;
-			w_ctx->tx_buffer_by_port[port_id] =
-					port_queues[lcore_id][port_id].tx_buffer;
-
-			w_ctx->max_rx_tx_index++;
+		if (!lf_worker_lcores[lcore_id]) {
+			continue;
 		}
-		LF_LOG(DEBUG, "lcore %u, nb_rx_tx %u\n", lcore_id,
-				w_ctx->max_rx_tx_index);
 
-		w_ctx->mirror_ctx = &mirror_ctx.workers[lcore_id];
+		distributor_workers[worker_id] = &worker_contexts[lcore_id].distributor;
+		worker_id++;
+
+		worker_contexts[lcore_id].mirror_ctx = &mirror_ctx.workers[lcore_id];
 	}
+
+	res = lf_distributor_init(&distributor, port_queues, lf_nb_distributors,
+			lf_distributor_lcores, lf_worker_lcores, &mirror_ctx, distributor_workers);
+	if (res < 0) {
+		LF_LOG(ERR, "Distributor setup failed\n");
+		return -1;
+	}
+
 	return 0;
 }
 
@@ -288,6 +313,18 @@ launch_lcores()
 		}
 		(void)rte_eal_remote_launch((lcore_function_t *)lf_worker_run,
 				&worker_contexts[lcore_id], lcore_id);
+	}
+
+	/* launch distributors */
+	uint32_t distributor_id = 0;
+	LF_LOG(NOTICE, "Launch distributors\n");
+	for (uint16_t lcore_id = 0; lcore_id < RTE_MAX_LCORE; ++lcore_id) {
+		if (!lf_worker_lcores[lcore_id]) {
+			continue;
+		}
+		(void)rte_eal_remote_launch((lcore_function_t *)lf_distributor_run,
+				&distributor.distributor_contexts[distributor_id], lcore_id);
+		distributor_id++;
 	}
 
 	return 0;
@@ -370,13 +407,17 @@ main(int argc, char **argv)
 	 * Currently, we only use the forwarding port pair provided by the
 	 * parameters.
 	 */
-	RTE_LCORE_FOREACH(lcore_id) {
-		if (!lf_worker_lcores[lcore_id]) {
-			continue;
+	// TODO(aaronbojarski): need to setup ports within distributor or at least
+	// check if it is done correctly
+	/*
+		RTE_LCORE_FOREACH(lcore_id) {
+			if (!lf_worker_lcores[lcore_id]) {
+				continue;
+			}
+			memcpy(worker_contexts[lcore_id].port_pair, params.dst_port,
+					sizeof(params.dst_port));
 		}
-		memcpy(worker_contexts[lcore_id].port_pair, params.dst_port,
-				sizeof(params.dst_port));
-	}
+	*/
 
 	/*
 	 * Initialize and launch IPC thread.
@@ -601,6 +642,7 @@ main(int argc, char **argv)
 	lf_ratelimiter_close(&ratelimiter);
 	lf_keymanager_close(&keymanager);
 	lf_statistics_close(&statistics);
+	lf_distributor_close(&distributor);
 
 	/* clean up the EAL */
 	(void)rte_eal_cleanup();

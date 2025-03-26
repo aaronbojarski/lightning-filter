@@ -16,6 +16,7 @@ extern volatile bool lf_force_quit;
 /* lcore assignments */
 extern uint16_t lf_nb_workers;
 extern uint16_t lf_keymanager_lcore;
+extern uint16_t lf_nb_distributors;
 
 #define LF_TELEMETRY_PREFIX "/lf"
 

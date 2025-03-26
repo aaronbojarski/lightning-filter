@@ -8,6 +8,7 @@
 #include <rte_config.h>
 
 #include "lf.h"
+#include "lib/mirror/mirror.h"
 #include "params.h"
 
 /**

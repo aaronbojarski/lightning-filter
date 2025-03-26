@@ -52,6 +52,7 @@ target_sources(${EXEC} PRIVATE keyfetcher.c keymanager.c ratelimiter.c statistic
 target_sources(${EXEC} PRIVATE worker.c worker_check.c)
 target_sources(${EXEC} PRIVATE lib/crypto/crypto.c lib/hash/murmurhash.c lib/ipc/ipc.c)
 target_sources(${EXEC} PRIVATE lib/mirror/mirror.c)
+target_sources(${EXEC} PRIVATE distributor.c)
 target_sources(${EXEC} PRIVATE plugins/plugins.c)
 
 # Link DPDK statically
