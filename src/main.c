@@ -209,7 +209,7 @@ assign_lcores(__rte_unused struct lf_params *params)
 
 		/* the following lcores are assigned to the distributor */
 		if (distributor_counter < lf_nb_distributors) {
-			lf_distributor_lcores[distributor_counter] = true;
+			lf_distributor_lcores[lcore_id] = true;
 			lf_distributor_lcore_map[distributor_counter] = lcore_id;
 			LF_LOG(DEBUG, "lcore %u: distributor %u\n", lcore_id,
 					distributor_counter);
