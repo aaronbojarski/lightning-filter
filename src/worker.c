@@ -154,15 +154,15 @@ set_pkt_action(struct rte_mbuf *pkt, enum lf_pkt_action pkt_action)
 	case LF_PKT_UNKNOWN_DROP:
 	case LF_PKT_INBOUND_DROP:
 	case LF_PKT_OUTBOUND_DROP:
-		*lf_pkt_action(pkt) = LF_PKT_ACTION_DROP;
+		*lf_pkt_action(pkt) = LF_DISTRIBUTOR_ACTION_DROP;
 		break;
 	case LF_PKT_UNKNOWN_FORWARD:
 	case LF_PKT_OUTBOUND_FORWARD:
 	case LF_PKT_INBOUND_FORWARD:
-		*lf_pkt_action(pkt) = LF_PKT_ACTION_FORWARD;
+		*lf_pkt_action(pkt) = LF_DISTRIBUTOR_ACTION_FORWARD;
 		break;
 	default:
-		*lf_pkt_action(pkt) = LF_PKT_ACTION_DROP;
+		*lf_pkt_action(pkt) = LF_DISTRIBUTOR_ACTION_DROP;
 		LF_WORKER_LOG_DP(ERR, "Unknown packet action (%u)\n", pkt_action);
 		break;
 	}

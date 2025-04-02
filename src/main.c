@@ -305,6 +305,18 @@ launch_lcores()
 			(lcore_function_t *)lf_keymanager_service_launch, &keymanager,
 			lf_keymanager_lcore);
 
+	/* launch distributors */
+	uint32_t distributor_id = 0;
+	LF_LOG(NOTICE, "Launch distributors\n");
+	for (uint16_t lcore_id = 0; lcore_id < RTE_MAX_LCORE; ++lcore_id) {
+		if (!lf_distributor_lcores[lcore_id]) {
+			continue;
+		}
+		(void)rte_eal_remote_launch((lcore_function_t *)lf_distributor_run,
+				&distributor.distributor_contexts[distributor_id], lcore_id);
+		distributor_id++;
+	}
+
 	/* launch workers */
 	LF_LOG(NOTICE, "Launch workers\n");
 	for (uint16_t lcore_id = 0; lcore_id < RTE_MAX_LCORE; ++lcore_id) {
@@ -313,18 +325,6 @@ launch_lcores()
 		}
 		(void)rte_eal_remote_launch((lcore_function_t *)lf_worker_run,
 				&worker_contexts[lcore_id], lcore_id);
-	}
-
-	/* launch distributors */
-	uint32_t distributor_id = 0;
-	LF_LOG(NOTICE, "Launch distributors\n");
-	for (uint16_t lcore_id = 0; lcore_id < RTE_MAX_LCORE; ++lcore_id) {
-		if (!lf_worker_lcores[lcore_id]) {
-			continue;
-		}
-		(void)rte_eal_remote_launch((lcore_function_t *)lf_distributor_run,
-				&distributor.distributor_contexts[distributor_id], lcore_id);
-		distributor_id++;
 	}
 
 	return 0;
